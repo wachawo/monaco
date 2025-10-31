@@ -28,18 +28,24 @@ cd ./monaco
 sudo ./install.sh  # for system-wide installation
 ```
 
-This script downloads the MONACO font file from the repository and installs it into the appropriate font directory.
+This script downloads compressed font archives from the repository, extracts and installs font files into the appropriate directory.
 
 File: `install.sh` (also available at https://raw.githubusercontent.com/wachawo/monaco/main/install.sh)
 
 Features:
-- Downloads MONACO.TTF from GitHub repository.
-- Installs into `~/.fonts/` for regular users or `/usr/share/fonts/monaco/` for root user.
+- Downloads compressed font archives (ZIP) from GitHub repository.
+- Extracts only the font files on-the-fly without saving archives locally.
+- Installs into `~/.fonts/` for regular users or `/usr/share/fonts/custom/` for root user.
 - Updates the font cache using `fc-cache`.
 - Supports dry-run (`-n`) and force overwrite (`-f`).
 - Automatically detects if running as root and chooses appropriate installation directory.
+- Requires `unzip` utility to extract font files.
 
 Installation directories:
 - **Regular users**: `~/.fonts/`
-- **Root user**: `/usr/share/fonts/monaco/`
+- **Root user**: `/usr/share/fonts/custom/`
 - **Custom**: Use `-t` option to specify custom directory
+
+Requirements:
+- `curl` or `wget` for downloading
+- `unzip` for extracting font files from archives

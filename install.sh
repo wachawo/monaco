@@ -14,15 +14,17 @@ BASE_URL="https://raw.githubusercontent.com/wachawo/monaco/refs/heads/main/fonts
 
 show_help(){
   cat <<EOF
-Usage: install.sh [options] [font-file ...]
+Usage: install.sh [options] [font-archive ...]
 
-Downloads font files from the repository raw URL and installs them.
+Downloads font archives from the repository, extracts and installs font files.
 
 Installation directory:
   - For regular users: ~/.fonts/
   - For root user: /usr/share/fonts/custom/
 
-If no font filenames are provided, the script will download MONACO.TTF by default.
+If no font archive names are provided, the script will download and extract MONACO.zip by default.
+
+The script downloads ZIP archives and extracts only the font files to the destination directory.
 
 Options:
   -b URL   Use a different base URL for downloads (default: ${BASE_URL})
@@ -32,13 +34,16 @@ Options:
   -h       Show this help
 
 Examples:
-  # Download and install MONACO.TTF
+  # Download and install MONACO.TTF from MONACO.zip
   install.sh
+
+  # Install specific font archive
+  install.sh MONACO.zip
 
   # Use a custom install directory
   install.sh -t ~/.local/share/fonts
 
-  # Dry-run to see what would be downloaded
+  # Dry-run to see what would be downloaded and extracted
   install.sh -n
 EOF
 }
@@ -58,10 +63,10 @@ while getopts ":b:t:fnh" opt; do
 done
 shift $((OPTIND-1))
 
-# Default list of font basenames to download when no filenames are provided.
+# Default list of font archive basenames to download when no filenames are provided.
 # These are fetched from ${BASE_URL}/<name>
 DEFAULT_FILENAMES=(
-  MONACO.TTF
+  MONACO.zip
 )
 
 # If the user supplied filenames, use them; otherwise use the default list above.
@@ -74,23 +79,44 @@ fi
 mkdir -p "$ROOT_DIR"
 
 download_cmds=()
+extract_cmds=()
+
 for name in "${FILENAMES[@]}"; do
   # skip empty names
   [ -z "$name" ] && continue
-  # construct remote url and destination
+  
+  # construct remote url and temporary destination for zip
   remote_url="$BASE_URL/$name"
-  dest="$ROOT_DIR/$name"
+  temp_zip="/tmp/${name}"
+  
+  # determine final font file name based on archive name
+  if [[ "$name" == "MONACO.zip" ]]; then
+    font_name="MONACO.TTF"
+  elif [[ "$name" == *.zip ]]; then
+    # For other zip files, assume font name is archive name without .zip
+    font_name="${name%.zip}"
+  else
+    font_name="$name"
+  fi
+  
+  final_dest="$ROOT_DIR/$font_name"
 
-  if [ -e "$dest" ] && [ "$FORCE" -ne 1 ]; then
-    echo "Skipping existing file: $dest (use -f to overwrite)" >&2
+  if [ -e "$final_dest" ] && [ "$FORCE" -ne 1 ]; then
+    echo "Skipping existing font: $final_dest (use -f to overwrite)" >&2
     continue
+  fi
+
+  # check if unzip is available
+  if ! command -v unzip >/dev/null 2>&1; then
+    echo "unzip is not available; cannot extract font archives." >&2
+    exit 3
   fi
 
   # choose downloader
   if command -v curl >/dev/null 2>&1; then
-    dl_cmd=(curl -fSL -o "$dest" "$remote_url")
+    dl_cmd=(curl -fSL -o "$temp_zip" "$remote_url")
   elif command -v wget >/dev/null 2>&1; then
-    dl_cmd=(wget -O "$dest" "$remote_url")
+    dl_cmd=(wget -O "$temp_zip" "$remote_url")
   else
     echo "Neither curl nor wget is available; cannot download files." >&2
     exit 3
@@ -98,21 +124,38 @@ for name in "${FILENAMES[@]}"; do
 
   if [ "$DRY_RUN" -eq 1 ]; then
     download_cmds+=("${dl_cmd[*]}")
+    extract_cmds+=("unzip -j $temp_zip $font_name -d $ROOT_DIR")
+    extract_cmds+=("rm $temp_zip")
   else
-    echo "Downloading $remote_url -> $dest"
+    echo "Downloading $remote_url -> $temp_zip"
     # attempt download, continue on failure
     if ! "${dl_cmd[@]}"; then
       echo "Failed to download: $remote_url" >&2
-      # remove partial file if any
-      rm -f "$dest" || true
+      rm -f "$temp_zip" || true
       continue
     fi
+    
+    echo "Extracting $font_name from $temp_zip to $ROOT_DIR"
+    # extract only the font file we need
+    if ! unzip -j "$temp_zip" "$font_name" -d "$ROOT_DIR"; then
+      echo "Failed to extract font from: $temp_zip" >&2
+      rm -f "$temp_zip" || true
+      continue
+    fi
+    
+    # cleanup temporary zip file
+    rm -f "$temp_zip" || true
   fi
 done
 
 if [ "$DRY_RUN" -eq 1 ]; then
   echo "Dry-run: the following commands would be executed:"
+  echo "Download commands:"
   for c in "${download_cmds[@]}"; do
+    echo "  $c"
+  done
+  echo "Extract commands:"
+  for c in "${extract_cmds[@]}"; do
     echo "  $c"
   done
   exit 0
